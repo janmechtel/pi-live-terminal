@@ -102,6 +102,21 @@ function statusGlyph(state: "running" | "completed" | "unknown", status?: string
   return SPINNER_FRAMES[Math.floor(Date.now() / POLL_MS) % SPINNER_FRAMES.length];
 }
 
+export function renderFooterLine(width: number, hints: string, border: (s: string) => string): string {
+  if (width <= 0) return "";
+  if (width === 1) return border("╰");
+  if (width === 2) return border("╰╯");
+
+  const innerW = width - 2;
+  const maxHintsWidth = Math.max(0, innerW - 1);
+  const fittedHints = maxHintsWidth > 0
+    ? truncateToWidth(hints, maxHintsWidth, "…", true)
+    : "";
+  const leftRuleWidth = Math.max(0, innerW - visibleWidth(fittedHints) - 1);
+  const line = border("╰") + border("─".repeat(leftRuleWidth)) + fittedHints + border("─╯");
+  return truncateToWidth(line, width, "", true);
+}
+
 function waitDescription(condition: WaitCondition): string {
   return condition.kind === "regex"
     ? `regex ${JSON.stringify(condition.source)}`
@@ -707,9 +722,7 @@ class LiveTerminalWidget implements Component {
           shortcut(" ctrl+shift+x ") + dim("kill"),
           shortcut(" ctrl+shift+v ") + dim("detach"),
         ]).join(border(" · "));
-    const hintsWidth = visibleWidth(hints);
-    const leftRuleWidth = Math.max(1, innerW - hintsWidth - 1);
-    result.push(border("╰") + border("─".repeat(leftRuleWidth)) + hints + border("─╯"));
+    result.push(renderFooterLine(width, hints, border));
     return result;
   }
 
@@ -935,9 +948,7 @@ class TmuxFocusModal implements Component {
       dim("scroll wheel scrolls output"),
       dim("input is sent to tmux"),
     ].join(border(" · "));
-    const hintsWidth = visibleWidth(hints);
-    const leftRuleWidth = Math.max(1, innerW - hintsWidth - 1);
-    result.push(border("╰") + border("─".repeat(leftRuleWidth)) + hints + border("─╯"));
+    result.push(renderFooterLine(width, hints, border));
     return result;
   }
 
