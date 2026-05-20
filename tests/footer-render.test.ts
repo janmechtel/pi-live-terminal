@@ -25,16 +25,31 @@ const hintSets = [
   },
 ];
 
-test("footer hints fit the render width", () => {
+test("footer hints fill but do not exceed the render width", () => {
   for (const { name, hints } of hintSets) {
-    for (const width of [54, 20]) {
+    for (const width of [54, 20, 5, 4, 3, 2, 1]) {
       const line = renderFooterLine(width, hints, border);
 
       assert.equal(
-        visibleWidth(line) <= width,
-        true,
+        visibleWidth(line),
+        width,
         `${name} rendered ${visibleWidth(line)} columns into ${width}`,
       );
     }
   }
+});
+
+test("narrow footer keeps hints right-justified after a bottom border rule", () => {
+  const line = renderFooterLine(54, hintSets[0].hints, border);
+
+  assert.match(line, /^╰─/);
+  assert.match(line, /─╯$/);
+});
+
+test("footer keeps unpadded hints adjacent to the right rule", () => {
+  const line = renderFooterLine(16, "shortcuts", border);
+
+  assert.equal(visibleWidth(line), 16);
+  assert.match(line, /^╰─+/);
+  assert.match(line, /shortcuts─╯$/);
 });

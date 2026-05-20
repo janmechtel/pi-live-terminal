@@ -106,15 +106,15 @@ export function renderFooterLine(width: number, hints: string, border: (s: strin
   if (width <= 0) return "";
   if (width === 1) return border("╰");
   if (width === 2) return border("╰╯");
+  if (width === 3) return border("╰─╯");
 
   const innerW = width - 2;
-  const maxHintsWidth = Math.max(0, innerW - 1);
+  const maxHintsWidth = Math.max(0, innerW - 2);
   const fittedHints = maxHintsWidth > 0
-    ? truncateToWidth(hints, maxHintsWidth, "…", true)
+    ? truncateToWidth(hints, maxHintsWidth, "…")
     : "";
-  const leftRuleWidth = Math.max(0, innerW - visibleWidth(fittedHints) - 1);
-  const line = border("╰") + border("─".repeat(leftRuleWidth)) + fittedHints + border("─╯");
-  return truncateToWidth(line, width, "", true);
+  const leftRuleWidth = Math.max(1, innerW - visibleWidth(fittedHints) - 1);
+  return border("╰") + border("─".repeat(leftRuleWidth)) + fittedHints + border("─╯");
 }
 
 function waitDescription(condition: WaitCondition): string {
