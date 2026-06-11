@@ -4,7 +4,7 @@ import { Key, Text, decodeKittyPrintable, matchesKey, parseKey, truncateToWidth,
 import { Type } from "typebox";
 import { execFile, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream, promises as fs } from "node:fs";
+import { createReadStream, writeFileSync, promises as fs } from "node:fs";
 import type { ReadStream } from "node:fs";
 
 const CAPTURE_LINES = 200;
@@ -43,6 +43,7 @@ type WaitCondition =
 type WaitResult = {
   matched: boolean;
   timedOut?: boolean;
+  exitedEarly?: boolean;
   condition: string;
   elapsedMs: number;
   status?: string;
@@ -125,6 +126,7 @@ function waitDescription(condition: WaitCondition): string {
 
 function waitResultMessage(result: WaitResult): string {
   if (result.timedOut) return `Timed out after ${result.elapsedMs}ms waiting for ${result.condition}.`;
+  if (result.exitedEarly) return `Process exited with status ${result.status} before ${result.condition} matched (after ${result.elapsedMs}ms).`;
   if (result.status !== undefined) return `Matched ${result.condition} with status ${result.status} after ${result.elapsedMs}ms.`;
   if (result.match !== undefined) return `Matched ${result.condition} after ${result.elapsedMs}ms: ${compactText(result.match, 120)}`;
   return `Matched ${result.condition} after ${result.elapsedMs}ms.`;
@@ -468,9 +470,13 @@ async function waitForTerminal(target: string, waitFor: WaitForOptions, signal?:
         return { matched: true, condition: description, status, elapsedMs: Date.now() - startedAt };
       }
     } else if (condition.kind === "regex") {
-      const match = (await capturePaneText(target)).match(condition.regex);
+      const [paneText, exitStatus] = await Promise.all([capturePaneText(target), getExitStatus(target)]);
+      const match = paneText.match(condition.regex);
       if (match) {
         return { matched: true, condition: description, match: match[0], elapsedMs: Date.now() - startedAt };
+      }
+      if (exitStatus !== undefined) {
+        return { matched: false, exitedEarly: true, condition: description, status: exitStatus, elapsedMs: Date.now() - startedAt };
       }
     }
 
@@ -978,10 +984,8 @@ export default function (pi: ExtensionAPI) {
     const sessionName = safeSessionName(options.sessionName);
     const title = options.title || options.sessionName || compactText(command, 48) || DEFAULT_TITLE;
     const cwd = ctx.cwd || process.cwd();
-    const shellCommand = `bash -lc ${shellQuote(`${command}
-status=$?
-printf '\n[Session exited with status %s]\n' "$status"
-tmux set-option -p -t "$TMUX_PANE" @pi_tmux_run_status "$status" 2>/dev/null || true`)}`;
+    const scriptPath = `/tmp/pi-live-${randomBytes(6).toString("hex")}.sh`;
+    writeFileSync(scriptPath, `(${command})\nstatus=$?\nprintf '\\n[Session exited with status %s]\\n' "$status"\ntmux set-option -p -t "$TMUX_PANE" @pi_tmux_run_status "$status" 2>/dev/null || true\n`);
 
     execFileSync(
       "tmux",
@@ -993,7 +997,7 @@ tmux set-option -p -t "$TMUX_PANE" @pi_tmux_run_status "$status" 2>/dev/null || 
 
     const paneId = await tmux(["display-message", "-p", "-t", sessionName, "#{pane_id}"]);
     const target = paneId.trim() || sessionName;
-    await tmux(["send-keys", "-t", target, "-l", shellCommand]);
+    await tmux(["send-keys", "-t", target, "-l", `bash ${shellQuote(scriptPath)}`]);
     await tmux(["send-keys", "-t", target, "Enter"]);
 
     if (ctx.hasUI) {
@@ -1394,7 +1398,7 @@ tmux set-option -p -t "$TMUX_PANE" @pi_tmux_run_status "$status" 2>/dev/null || 
         : typeof details?.sessionName === "string"
           ? startedVisibleMessage(details.sessionName)
           : "Opened live terminal.";
-      const color = details?.waitResult?.timedOut ? "warning" : "success";
+      const color = details?.waitResult?.timedOut || details?.waitResult?.exitedEarly ? "warning" : "success";
       return new Text(theme.fg(color, message), 0, 0);
     },
   });
